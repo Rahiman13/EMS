@@ -139,3 +139,87 @@ exports.deleteUser = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+
+// Get User Statistics
+exports.getUserStatistics = async (req, res) => {
+  try {
+    // Get total user count
+    const totalUsers = await User.countDocuments();
+
+    // Get counts by role
+    const roleCounts = await User.aggregate([
+      {
+        $group: {
+          _id: '$role',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get counts by category (excluding CEO and Manager)
+    const categoryCounts = await User.aggregate([
+      {
+        $match: {
+          role: { $nin: ['CEO', 'Manager'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$category',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get counts by status
+    const statusCounts = await User.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Format the results
+    const formattedRoleCounts = {};
+    roleCounts.forEach(item => {
+      formattedRoleCounts[item._id || 'Unassigned'] = item.count;
+    });
+
+    const formattedCategoryCounts = {};
+    categoryCounts.forEach(item => {
+      formattedCategoryCounts[item._id || 'Unassigned'] = item.count;
+    });
+
+    const formattedStatusCounts = {};
+    statusCounts.forEach(item => {
+      formattedStatusCounts[item._id || 'Unassigned'] = item.count;
+    });
+
+    // Get recent users (last 5)
+    const recentUsers = await User.find()
+      .select('name email role category createdAt')
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean(); // Convert to plain JavaScript objects
+
+    // Remove category for CEO and Manager in recent users
+    recentUsers.forEach(user => {
+      if (user.role === 'CEO' || user.role === 'Manager') {
+        user.category = null;
+      }
+    });
+
+    res.json({
+      totalUsers,
+      byRole: formattedRoleCounts,
+      byCategory: formattedCategoryCounts,
+      byStatus: formattedStatusCounts,
+      recentUsers
+    });
+  } catch (error) {
+    console.error('Get user statistics error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
